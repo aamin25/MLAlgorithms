@@ -22,7 +22,9 @@ def linear(z):
 
 def softplus(z):
     """Smooth relu."""
-    return np.log(1 + np.exp(z))
+    # Avoid numerical overflow, see:
+    # https://docs.scipy.org/doc/numpy/reference/generated/numpy.logaddexp.html
+    return np.logaddexp(0.0, z)
 
 
 def softsign(z):
@@ -37,9 +39,13 @@ def relu(z):
     return np.maximum(0, z)
 
 
+def leakyrelu(z, a=0.01):
+    return np.maximum(z * a, z)
+
+
 def get_activation(name):
     """Return activation function by name"""
     try:
         return globals()[name]
-    except:
-        raise ValueError('Invalid activation function.')
+    except Exception:
+        raise ValueError("Invalid activation function.")

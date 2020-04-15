@@ -9,7 +9,8 @@ from mla.utils import batch_iterator
 
 """
 References:
-Gradient descent optimization algorithms  http://sebastianruder.com/optimizing-gradient-descent/index.html
+
+    Gradient descent optimization algorithms  http://sebastianruder.com/optimizing-gradient-descent/index.html
 """
 
 
@@ -23,12 +24,12 @@ class Optimizer(object):
             start_time = time.time()
             loss = self.train_epoch(network)
             loss_history.append(loss)
-            msg = "Epoch:%s, train loss: %s" % (i, loss)
-
-            if network.log_metric:
-                msg += ', train %s: %s' % (network.metric_name, network.error())
-            msg += ', elapsed: %s sec.' % (time.time() - start_time)
-            logging.info(msg)
+            if network.verbose:
+                msg = "Epoch:%s, train loss: %s" % (i, loss)
+                if network.log_metric:
+                    msg += ", train %s: %s" % (network.metric_name, network.error())
+                msg += ", elapsed: %s sec." % (time.time() - start_time)
+                logging.info(msg)
         return loss_history
 
     def update(self, network):
@@ -36,14 +37,17 @@ class Optimizer(object):
         raise NotImplementedError
 
     def train_epoch(self, network):
-        self._setup(network)
         losses = []
 
         # Create batch iterator
         X_batch = batch_iterator(network.X, network.batch_size)
         y_batch = batch_iterator(network.y, network.batch_size)
 
-        for X, y in tqdm(zip(X_batch, y_batch), 'Epoch progress'):
+        batch = zip(X_batch, y_batch)
+        if network.verbose:
+            batch = tqdm(batch, total=int(np.ceil(network.n_samples / network.batch_size)))
+
+        for X, y in batch:
             loss = np.mean(network.update(X, y))
             self.update(network)
             losses.append(loss)
@@ -51,12 +55,19 @@ class Optimizer(object):
         epoch_loss = np.mean(losses)
         return epoch_loss
 
-    def _setup(self, network):
+    def train_batch(self, network, X, y):
+        loss = np.mean(network.update(X, y))
+        self.update(network)
+        return loss
+
+    def setup(self, network):
+        """Creates additional variables.
+        Note: Must be called before optimization process."""
         raise NotImplementedError
 
 
 class SGD(Optimizer):
-    def __init__(self, learning_rate=0.01, momentum=0.9, decay=0., nesterov=False):
+    def __init__(self, learning_rate=0.01, momentum=0.9, decay=0.0, nesterov=False):
         self.nesterov = nesterov
         self.decay = decay
         self.momentum = momentum
@@ -65,7 +76,7 @@ class SGD(Optimizer):
         self.velocity = None
 
     def update(self, network):
-        lr = self.lr * (1. / (1. + self.decay * self.iteration))
+        lr = self.lr * (1.0 / (1.0 + self.decay * self.iteration))
 
         for i, layer in enumerate(network.parametric_layers):
             for n in layer.parameters.keys():
@@ -79,7 +90,7 @@ class SGD(Optimizer):
                 layer.parameters.step(n, update)
         self.iteration += 1
 
-    def _setup(self, network):
+    def setup(self, network):
         self.velocity = defaultdict(dict)
         for i, layer in enumerate(network.parametric_layers):
             for n in layer.parameters.keys():
@@ -99,7 +110,7 @@ class Adagrad(Optimizer):
                 step = self.lr * grad / (np.sqrt(self.accu[i][n]) + self.eps)
                 layer.parameters.step(n, -step)
 
-    def _setup(self, network):
+    def setup(self, network):
         # Accumulators
         self.accu = defaultdict(dict)
         for i, layer in enumerate(network.parametric_layers):
@@ -117,15 +128,14 @@ class Adadelta(Optimizer):
         for i, layer in enumerate(network.parametric_layers):
             for n in layer.parameters.keys():
                 grad = layer.parameters.grad[n]
-                self.accu[i][n] = self.rho * self.accu[i][n] + (1. - self.rho) * grad ** 2
-                step = grad * np.sqrt(self.d_accu[i][n] + self.eps) / np.sqrt(
-                    self.accu[i][n] + self.eps)
+                self.accu[i][n] = self.rho * self.accu[i][n] + (1.0 - self.rho) * grad ** 2
+                step = grad * np.sqrt(self.d_accu[i][n] + self.eps) / np.sqrt(self.accu[i][n] + self.eps)
 
                 layer.parameters.step(n, -step * self.lr)
                 # Update delta accumulator
-                self.d_accu[i][n] = self.rho * self.d_accu[i][n] + (1. - self.rho) * step ** 2
+                self.d_accu[i][n] = self.rho * self.d_accu[i][n] + (1.0 - self.rho) * step ** 2
 
-    def _setup(self, network):
+    def setup(self, network):
         # Accumulators
         self.accu = defaultdict(dict)
         self.d_accu = defaultdict(dict)
@@ -145,11 +155,11 @@ class RMSprop(Optimizer):
         for i, layer in enumerate(network.parametric_layers):
             for n in layer.parameters.keys():
                 grad = layer.parameters.grad[n]
-                self.accu[i][n] = (self.rho * self.accu[i][n]) + (1. - self.rho) * (grad ** 2)
+                self.accu[i][n] = (self.rho * self.accu[i][n]) + (1.0 - self.rho) * (grad ** 2)
                 step = self.lr * grad / (np.sqrt(self.accu[i][n]) + self.eps)
                 layer.parameters.step(n, -step)
 
-    def _setup(self, network):
+    def setup(self, network):
         # Accumulators
         self.accu = defaultdict(dict)
         for i, layer in enumerate(network.parametric_layers):
@@ -158,7 +168,7 @@ class RMSprop(Optimizer):
 
 
 class Adam(Optimizer):
-    def __init__(self, learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8, ):
+    def __init__(self, learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8):
 
         self.epsilon = epsilon
         self.beta_2 = beta_2
@@ -171,15 +181,15 @@ class Adam(Optimizer):
         for i, layer in enumerate(network.parametric_layers):
             for n in layer.parameters.keys():
                 grad = layer.parameters.grad[n]
-                self.ms[i][n] = (self.beta_1 * self.ms[i][n]) + (1. - self.beta_1) * grad
-                self.vs[i][n] = (self.beta_2 * self.vs[i][n]) + (1. - self.beta_2) * grad ** 2
-                lr = self.lr * np.sqrt(1. - self.beta_2 ** self.t) / (1. - self.beta_1 ** self.t)
+                self.ms[i][n] = (self.beta_1 * self.ms[i][n]) + (1.0 - self.beta_1) * grad
+                self.vs[i][n] = (self.beta_2 * self.vs[i][n]) + (1.0 - self.beta_2) * grad ** 2
+                lr = self.lr * np.sqrt(1.0 - self.beta_2 ** self.t) / (1.0 - self.beta_1 ** self.t)
 
                 step = lr * self.ms[i][n] / (np.sqrt(self.vs[i][n]) + self.epsilon)
                 layer.parameters.step(n, -step)
         self.t += 1
 
-    def _setup(self, network):
+    def setup(self, network):
         # Accumulators
         self.ms = defaultdict(dict)
         self.vs = defaultdict(dict)
@@ -187,3 +197,31 @@ class Adam(Optimizer):
             for n in layer.parameters.keys():
                 self.ms[i][n] = np.zeros_like(layer.parameters[n])
                 self.vs[i][n] = np.zeros_like(layer.parameters[n])
+
+class Adamax(Optimizer):
+    def __init__(self, learning_rate=0.002, beta_1=0.9, beta_2=0.999, epsilon=1e-8):
+
+        self.epsilon = epsilon
+        self.beta_2 = beta_2
+        self.beta_1 = beta_1
+        self.lr = learning_rate
+        self.t = 1
+
+    def update(self, network):
+        for i, layer in enumerate(network.parametric_layers):
+            for n in layer.parameters.keys():
+                grad = layer.parameters.grad[n]
+                self.ms[i][n] = self.beta_1 * self.ms[i][n] + (1.0 - self.beta_1) * grad
+                self.us[i][n] = np.maximum(self.beta_2 * self.us[i][n], np.abs(grad))
+
+                step = self.lr / (1 - self.beta_1 ** self.t) * self.ms[i][n]/(self.us[i][n] + self.epsilon)
+                layer.parameters.step(n, -step)
+        self.t += 1
+
+    def setup(self, network):
+        self.ms = defaultdict(dict)
+        self.us = defaultdict(dict)
+        for i, layer in enumerate(network.parametric_layers):
+            for n in layer.parameters.keys():
+                self.ms[i][n] = np.zeros_like(layer.parameters[n])
+                self.us[i][n] = np.zeros_like(layer.parameters[n])

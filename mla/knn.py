@@ -1,3 +1,5 @@
+# coding:utf-8
+
 from collections import Counter
 
 import numpy as np
@@ -7,9 +9,8 @@ from mla.base import BaseEstimator
 
 
 class KNNBase(BaseEstimator):
-
     def __init__(self, k=5, distance_func=euclidean):
-        """Base for Nearest neighbors classifier and regressor.
+        """Base class for Nearest neighbors classifier and regressor.
 
         Parameters
         ----------
@@ -28,7 +29,6 @@ class KNNBase(BaseEstimator):
         raise NotImplementedError()
 
     def _predict(self, X=None):
-
         predictions = [self._predict_x(x) for x in X]
 
         return np.array(predictions)
@@ -40,13 +40,11 @@ class KNNBase(BaseEstimator):
         distances = (self.distance_func(x, example) for example in self.X)
 
         # Sort all examples by their distance to x and keep their target value.
-        neighbors = sorted(((dist, target)
-                           for (dist, target) in zip(distances, self.y)),
-                           key=lambda x: x[0])
+        neighbors = sorted(((dist, target) for (dist, target) in zip(distances, self.y)), key=lambda x: x[0])
 
         # Get targets of the k-nn and aggregate them (most common one or
         # average).
-        neighbors_targets = [target for (_, target) in neighbors[:self.k]]
+        neighbors_targets = [target for (_, target) in neighbors[: self.k]]
 
         return self.aggregate(neighbors_targets)
 
@@ -56,7 +54,6 @@ class KNNClassifier(KNNBase):
 
     Note: if there is a tie for the most common label among the neighbors, then
     the predicted label is arbitrary."""
-
 
     def aggregate(self, neighbors_targets):
         """Return the most common target label."""

@@ -13,25 +13,30 @@ np.random.seed(9999)
 
 """
 Architecture inspired from:
-https://github.com/fchollet/keras
-https://github.com/andersbll/deeppy
+
+    https://github.com/fchollet/keras
+    https://github.com/andersbll/deeppy
 """
 
 
 class NeuralNet(BaseEstimator):
-    def __init__(self, layers, optimizer, loss, max_epochs=10, batch_size=64, random_seed=33, metric='mse',
-                 shuffle=True):
+    fit_required = False
+
+    def __init__(
+        self, layers, optimizer, loss, max_epochs=10, batch_size=64, metric="mse", shuffle=False, verbose=True
+    ):
+        self.verbose = verbose
         self.shuffle = shuffle
         self.optimizer = optimizer
+
         self.loss = get_loss(loss)
 
         # TODO: fix
-        if loss == 'categorical_crossentropy':
+        if loss == "categorical_crossentropy":
             self.loss_grad = lambda actual, predicted: -(actual - predicted)
         else:
             self.loss_grad = elementwise_grad(self.loss, 1)
         self.metric = get_metric(metric)
-        self.random_seed = random_seed
         self.layers = layers
         self.batch_size = batch_size
         self.max_epochs = max_epochs
@@ -52,23 +57,26 @@ class NeuralNet(BaseEstimator):
             x_shape = layer.shape(x_shape)
 
         self._n_layers = len(self.layers)
+        # Setup optimizer
+        self.optimizer.setup(self)
         self._initialized = True
-        logging.info('Total parameters: %s' % self.n_params)
+        logging.info("Total parameters: %s" % self.n_params)
 
     def _find_bprop_entry(self):
         """Find entry layer for back propagation."""
 
-        if len(self.layers) > 0 and not hasattr(self.layers[-1], 'parameters'):
+        if len(self.layers) > 0 and not hasattr(self.layers[-1], "parameters"):
             return -1
         return len(self.layers)
 
     def fit(self, X, y=None):
+        if not self._initialized:
+            self._setup_layers(X.shape)
+
         if y.ndim == 1:
             # Reshape vector to matrix
             y = y[:, np.newaxis]
         self._setup_input(X, y)
-        if not self._initialized:
-            self._setup_layers(X.shape)
 
         self.is_training = True
         # Pass neural network instance to an optimizer
@@ -81,7 +89,7 @@ class NeuralNet(BaseEstimator):
 
         # Backward pass
         grad = self.loss_grad(y, y_pred)
-        for layer in reversed(self.layers[:self.bprop_entry]):
+        for layer in reversed(self.layers[: self.bprop_entry]):
             grad = layer.backward_pass(grad)
         return self.loss(y, y_pred)
 
@@ -92,6 +100,9 @@ class NeuralNet(BaseEstimator):
         return X
 
     def _predict(self, X=None):
+        if not self._initialized:
+            self._setup_layers(X.shape)
+
         y = []
         X_batch = batch_iterator(X, self.batch_size)
         for Xb in X_batch:
@@ -101,7 +112,7 @@ class NeuralNet(BaseEstimator):
     @property
     def parametric_layers(self):
         for layer in self.layers:
-            if hasattr(layer, 'parameters'):
+            if hasattr(layer, "parameters"):
                 yield layer
 
     @property
